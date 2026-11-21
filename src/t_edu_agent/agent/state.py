@@ -87,6 +87,7 @@ class SessionState(BaseModel):
     profile: UserProfile = Field(default_factory=UserProfile)
     discussed_doc_ids: list[str] = Field(default_factory=list)
     discussed_titles: list[str] = Field(default_factory=list)
+    security_strikes: int = 0
 
 
 class SessionStore:

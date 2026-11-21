@@ -28,6 +28,11 @@ from t_edu_agent.config import AppConfig, load_config
 from t_edu_agent.retrieval.hybrid import HybridRetriever, _detect_entity_matches
 from t_edu_agent.retrieval.models import RetrievalResult, SearchFilters
 from t_edu_agent.retrieval.text_processing import infer_query_hints
+from t_edu_agent.security import (
+    DiagnosticLogger,
+    assess_user_input,
+    inspect_and_sanitize_output,
+)
 
 _STATUS_TO_AUDIENCE: dict[str, list[str]] = {
     "студент": ["студенты"],
@@ -204,11 +209,13 @@ class TEducationAgent:
         retriever: HybridRetriever,
         llm_client: BaseLLMClient,
         session_store: SessionStore | None = None,
+        diagnostic_logger: DiagnosticLogger | None = None,
     ) -> None:
         self.cfg = cfg
         self.retriever = retriever
         self.llm = llm_client
         self.sessions = session_store or SessionStore()
+        self.diagnostic_logger = diagnostic_logger
 
     @classmethod
     def from_config(cls, config_path: Path | None = None) -> TEducationAgent:
@@ -220,7 +227,13 @@ class TEducationAgent:
             cfg.retrieval,
         )
         llm_client = GroqLLMClient(cfg.llm)
-        return cls(cfg=cfg, retriever=retriever, llm_client=llm_client)
+        diagnostic_logger = DiagnosticLogger(cfg.logging.diagnostic_log_file)
+        return cls(
+            cfg=cfg,
+            retriever=retriever,
+            llm_client=llm_client,
+            diagnostic_logger=diagnostic_logger,
+        )
 
     def new_session(self) -> str:
         """Create and return a new isolated session identifier."""
@@ -392,7 +405,7 @@ class TEducationAgent:
         return primary_res
 
     def answer(self, session_id: str, user_message: str) -> AgentResponse:
-        """Process one user turn with isolated state, hybrid retrieval, and grounded LLM output."""
+        """Process one user turn with isolated state, prompt-injection guards, and Groq generation."""
         cleaned_msg = user_message.strip()
         if not cleaned_msg:
             raise ValueError("Пустой запрос пользователя")
@@ -400,6 +413,44 @@ class TEducationAgent:
         t_total_start = time.perf_counter()
         session = self.sessions.get_or_create(session_id)
         warnings: list[str] = []
+
+        assessment = assess_user_input(cleaned_msg, session)
+        security_flags = list(assessment.flags)
+        if assessment.is_suspicious_probe or assessment.action == "block":
+            session.security_strikes += 1
+        if assessment.is_suspicious_probe:
+            warnings.append("security_probe_noted")
+
+        if assessment.action == "block":
+            warnings.append(f"security_blocked:{assessment.category}")
+            total_latency_ms = round((time.perf_counter() - t_total_start) * 1000.0, 2)
+            if self.diagnostic_logger is not None:
+                self.diagnostic_logger.log_turn(
+                    session_id=session.session_id,
+                    query=cleaned_msg,
+                    intent="out_of_scope",
+                    model_used="security_guard",
+                    latency_ms=total_latency_ms,
+                    retrieval_latency_ms=0.0,
+                    llm_latency_ms=0.0,
+                    source_ids=[],
+                    warnings=warnings,
+                    security_action="block",
+                    security_flags=security_flags,
+                )
+            return AgentResponse(
+                session_id=session.session_id,
+                answer=assessment.safe_refusal or "Запрос отклонён политикой безопасности.",
+                sources=[],
+                profile=session.profile.model_copy(deep=True),
+                intent="out_of_scope",
+                standalone_query="",
+                model_used="security_guard",
+                latency_ms=total_latency_ms,
+                retrieval_latency_ms=0.0,
+                llm_latency_ms=0.0,
+                warnings=warnings,
+            )
 
         plan = self._plan_retrieval(session, cleaned_msg, warnings)
         session.profile = _merge_profile(session.profile, plan.updated_profile)
@@ -413,6 +464,7 @@ class TEducationAgent:
             retrieval.chunks,
             intent=plan.intent,
             docs_by_id=self.retriever.docs_by_id,
+            sanitization_warnings=warnings,
         )
         grounded_payload = build_grounded_user_payload(session, cleaned_msg, context_xml)
 
@@ -431,6 +483,15 @@ class TEducationAgent:
         answer_text, model_used = self.llm.complete(messages)
         llm_latency_ms = round((time.perf_counter() - t_llm_start) * 1000.0, 2)
 
+        answer_text, out_flags = inspect_and_sanitize_output(answer_text)
+        for flag in out_flags:
+            warnings.append(f"output_guard:{flag}")
+            security_flags.append(flag)
+
+        for w in warnings:
+            if w.startswith("indirect_injection_sanitized:"):
+                security_flags.append(w)
+
         # Persist only clean user/assistant turns (never raw retrieved source XML)
         session.history.append(ChatTurn(role="user", content=cleaned_msg))
         session.history.append(ChatTurn(role="assistant", content=answer_text))
@@ -448,6 +509,24 @@ class TEducationAgent:
         session.discussed_titles = session.discussed_titles[:5]
 
         total_latency_ms = round((time.perf_counter() - t_total_start) * 1000.0, 2)
+        has_sanitization = bool(out_flags) or any(
+            w.startswith("indirect_injection_sanitized:") for w in warnings
+        )
+        if self.diagnostic_logger is not None:
+            self.diagnostic_logger.log_turn(
+                session_id=session.session_id,
+                query=cleaned_msg,
+                intent=plan.intent,
+                model_used=model_used,
+                latency_ms=total_latency_ms,
+                retrieval_latency_ms=retrieval_latency_ms,
+                llm_latency_ms=llm_latency_ms,
+                source_ids=[s.source_id for s in sources],
+                warnings=warnings,
+                security_action="sanitized" if has_sanitization else "allow",
+                security_flags=list(dict.fromkeys(security_flags)),
+            )
+
         return AgentResponse(
             session_id=session.session_id,
             answer=answer_text,

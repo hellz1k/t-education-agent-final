@@ -12,3 +12,7 @@ evals/*_report.json
 *.egg-info/
 *.npy
 *.onnx
+data/*.db
+*.db-journal
+*.db-wal
+*.db-shm
