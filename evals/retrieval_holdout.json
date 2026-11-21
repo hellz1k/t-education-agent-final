@@ -1,0 +1,93 @@
+[
+  {
+    "id": "h01_monte_carlo_npv",
+    "category": "curriculum_specifics",
+    "query": "Где разбирают метод Монте-Карло, NPV-модели и кредитные риски?",
+    "expected_all_docs": ["intensive_risk_analytics.md"],
+    "expected_sections": ["Описание"]
+  },
+  {
+    "id": "h02_bpmn_uml_c4",
+    "category": "curriculum_specifics",
+    "query": "На какой программе учат BPMN, UML, C4 и сбор требований к ПО?",
+    "expected_all_docs": ["intensive_system_analysis.md"],
+    "expected_sections": ["Описание"]
+  },
+  {
+    "id": "h03_mobile_qa_sniffers",
+    "category": "curriculum_specifics",
+    "query": "Где учат тестировать мобильные приложения через снифферы трафика и автоматизировать на Kotlin и Swift?",
+    "expected_all_docs": ["t_academy_qa.md"],
+    "expected_sections": ["Описание"]
+  },
+  {
+    "id": "h04_cohort_ab_neyman",
+    "category": "curriculum_specifics",
+    "query": "Хочу изучить когортный анализ, метрики, A/B-тесты и критерий Неймана-Пирсона",
+    "expected_all_docs": ["intensive_product_analytics.md"],
+    "expected_sections": ["Описание"]
+  },
+  {
+    "id": "h05_no_git_linux_go",
+    "category": "skill_negation",
+    "query": "У меня нет опыта с Git и Linux, но я пишу на Go и знаю алгоритмы — подойдёт ли мне разработка в Т-Академии?",
+    "expected_all_docs": ["t_academy_software_development.md"],
+    "expected_sections": ["Требования", "Для кого"]
+  },
+  {
+    "id": "h06_zero_coding_mobile",
+    "category": "zero_experience_negation",
+    "query": "Я вообще никогда не программировал, хочу с нуля сделать своё мобильное приложение под телефон",
+    "expected_any_docs": ["school_android.md", "school_ios.md"],
+    "expected_sections": ["Описание", "Требования", "Формат обучения"]
+  },
+  {
+    "id": "h07_simultaneous_programs",
+    "category": "multi_program_rule",
+    "query": "Можно ли учиться сразу в двух интенсивах или одновременно поступить в Т-Академию и на стажировку?",
+    "expected_any_docs": [
+      "t_academy_qa.md",
+      "t_academy_software_development.md",
+      "start_analyst.md",
+      "start_dwh.md",
+      "intensive_bi_analytics.md",
+      "intensive_data.md",
+      "intensive_product_analytics.md",
+      "intensive_qa_backend.md",
+      "intensive_risk_analytics.md",
+      "intensive_system_analysis.md"
+    ],
+    "expected_sections": ["Дополнительные условия"]
+  },
+  {
+    "id": "h08_cert_75_percent",
+    "category": "multi_program_criteria",
+    "query": "На каких курсах выдают сертификат, если выполнить тесты больше чем на 75 процентов?",
+    "expected_all_docs": [
+      "school_data_analysis.md",
+      "school_android.md",
+      "school_ios.md"
+    ],
+    "expected_sections": ["Дополнительные условия"]
+  },
+  {
+    "id": "h09_compare_qa_short_vs_long",
+    "category": "multi_program_comparison",
+    "query": "В чём разница между коротким двухнедельным обучением тестированию бэкенда и длинной программой по QA?",
+    "expected_all_docs": [
+      "intensive_qa_backend.md",
+      "t_academy_qa.md"
+    ],
+    "expected_sections": ["Описание", "Формат обучения"]
+  },
+  {
+    "id": "h10_kazakhstan_graduate_intern",
+    "category": "eligibility_and_citizenship",
+    "query": "Я гражданин Казахстана и уже окончил вуз, могу ли попасть на оплачиваемую стажировку по аналитике?",
+    "expected_any_docs": [
+      "start_analyst.md",
+      "start_dwh.md"
+    ],
+    "expected_sections": ["Для кого", "Формат обучения"]
+  }
+]

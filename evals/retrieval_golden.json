@@ -1,0 +1,172 @@
+[
+  {
+    "id": "q01_t1_data_analysis_2nd_year",
+    "category": "T1_discovery",
+    "query": "Я на втором курсе, хочу изучать анализ данных онлайн",
+    "expected_any_docs": [
+      "intensive_product_analytics.md",
+      "intensive_bi_analytics.md",
+      "intensive_data.md",
+      "school_data_analysis.md",
+      "start_analyst.md",
+      "start_dwh.md"
+    ],
+    "expected_sections": ["Описание", "Для кого", "Формат обучения", "Сводка программы"]
+  },
+  {
+    "id": "q02_t2_no_python_data_analysis",
+    "category": "T2_negative_constraint",
+    "query": "Анализ данных онлайн, но я пока не знаю Python",
+    "expected_any_docs": [
+      "school_data_analysis.md",
+      "start_dwh.md",
+      "start_analyst.md"
+    ],
+    "expected_sections": ["Требования", "Сводка программы", "Описание"]
+  },
+  {
+    "id": "q03_t3_compare_bi_and_product",
+    "category": "T3_comparison",
+    "query": "Сравни интенсив по BI-аналитике и интенсив по продуктовой аналитике",
+    "expected_all_docs": [
+      "intensive_bi_analytics.md",
+      "intensive_product_analytics.md"
+    ],
+    "expected_sections": ["Описание", "Требования", "Формат обучения", "Сводка программы"]
+  },
+  {
+    "id": "q04_t3_compare_academy_and_js",
+    "category": "T3_comparison",
+    "query": "Чем отличаются Т-Академия Разработка ПО и Интенсив по JavaScript?",
+    "expected_all_docs": [
+      "t_academy_software_development.md",
+      "intensive_javascript.md"
+    ],
+    "expected_sections": ["Описание", "Формат обучения", "Требования", "Сводка программы"]
+  },
+  {
+    "id": "q05_t4_qa_backend_enrollment",
+    "category": "T4_enrollment_status",
+    "query": "Открыт ли сейчас набор на интенсив по QA Backend и когда следующий поток?",
+    "expected_all_docs": ["intensive_qa_backend.md"],
+    "expected_sections": ["Даты и стоимость", "Порядок отбора"]
+  },
+  {
+    "id": "q06_t4_start_analyst_enrollment",
+    "category": "T4_enrollment_status",
+    "query": "Открыт ли набор на стажировку Т-Старт Аналитик и какие сроки отбора?",
+    "expected_all_docs": ["start_analyst.md"],
+    "expected_sections": ["Даты и стоимость", "Порядок отбора"]
+  },
+  {
+    "id": "q07_negated_java_qa_backend",
+    "category": "negated_prerequisite",
+    "query": "Нужно ли знать Java чтобы попасть на интенсив по QA Backend?",
+    "expected_all_docs": ["intensive_qa_backend.md"],
+    "expected_sections": ["Требования", "Для кого", "Сводка программы"]
+  },
+  {
+    "id": "q08_paid_mshp_cost",
+    "category": "paid_course",
+    "query": "Сколько стоит обучение в Школе программистов МШП?",
+    "expected_all_docs": ["school_mshp.md"],
+    "expected_sections": ["Даты и стоимость", "Порядок отбора", "Формат обучения"]
+  },
+  {
+    "id": "q09_offline_yekaterinburg",
+    "category": "offline_city",
+    "query": "Какие программы Т-Образования можно пройти очно в Екатеринбурге?",
+    "expected_any_docs": [
+      "intensive_system_analysis.md",
+      "school_mshp.md",
+      "start_mshp_teacher.md"
+    ],
+    "expected_sections": ["Формат обучения", "Для кого", "Сводка программы"]
+  },
+  {
+    "id": "q10_risk_analytics_offline_workload",
+    "category": "offline_and_workload",
+    "query": "Где есть очный интенсив по риск-аналитике и какая там нагрузка?",
+    "expected_all_docs": ["intensive_risk_analytics.md"],
+    "expected_sections": ["Формат обучения", "Требования", "Сводка программы"]
+  },
+  {
+    "id": "q11_proteus_greenplum",
+    "category": "rare_domain_terms",
+    "query": "На каких программах учат работать в Proteus и Greenplum?",
+    "expected_any_docs": [
+      "intensive_bi_analytics.md",
+      "intensive_product_analytics.md",
+      "start_dwh.md",
+      "intensive_data.md"
+    ],
+    "expected_sections": ["Описание", "Требования"]
+  },
+  {
+    "id": "q12_school_coding_no_selection",
+    "category": "school_no_selection",
+    "query": "Курсы по программированию для школьника без отбора с нуля",
+    "expected_any_docs": [
+      "school_informatics.md",
+      "school_android.md",
+      "school_ios.md"
+    ],
+    "expected_sections": ["Описание", "Порядок отбора", "Требования", "Сводка программы"]
+  },
+  {
+    "id": "q13_school_math_5th_grade",
+    "category": "school_math",
+    "query": "Онлайн-курс по математике для ученика 5 класса без вступительных испытаний",
+    "expected_all_docs": ["school_math.md"],
+    "expected_sections": ["Описание", "Для кого", "Требования", "Порядок отбора", "Сводка программы"]
+  },
+  {
+    "id": "q14_olympiad_prod",
+    "category": "olympiad",
+    "query": "Что даёт победа в олимпиаде PROD и для каких классов она подходит?",
+    "expected_all_docs": ["school_prod.md"],
+    "expected_sections": ["Описание", "Для кого", "Дополнительные условия"]
+  },
+  {
+    "id": "q15_olympiad_dano",
+    "category": "olympiad",
+    "query": "Олимпиада по анализу данных DANO для старшеклассников",
+    "expected_all_docs": ["school_dano.md"],
+    "expected_sections": ["Описание", "Для кого", "Сводка программы"]
+  },
+  {
+    "id": "q16_exam_trainer_t_number",
+    "category": "school_trainer",
+    "query": "Бесплатный тренажёр по задачам ЕГЭ по физике и математике",
+    "expected_all_docs": ["school_t_number.md"],
+    "expected_sections": ["Описание", "Формат обучения", "Сводка программы"]
+  },
+  {
+    "id": "q17_bilet_v_leto_camp",
+    "category": "school_camp",
+    "query": "Как поехать бесплатно в летнюю выездную олимпиадную школу Билет в лето?",
+    "expected_all_docs": ["school_bilet_v_leto.md"],
+    "expected_sections": ["Описание", "Порядок отбора", "Даты и стоимость"]
+  },
+  {
+    "id": "q18_school_partnership_t_class",
+    "category": "school_partnership",
+    "query": "Хотим запустить совместный проект или Т-Класс со школой, куда писать?",
+    "expected_all_docs": ["school_partnership.md"],
+    "expected_sections": ["Как подать заявку", "Порядок отбора", "Описание"]
+  },
+  {
+    "id": "q19_algorithms_simplified_academy",
+    "category": "academy_course",
+    "query": "Курс Алгоритмы и структуры данных: как получить упрощённый отбор в Т-Академию?",
+    "expected_all_docs": ["t_academy_algorithms.md"],
+    "expected_sections": ["Описание", "Дополнительные условия", "Порядок отбора"]
+  },
+  {
+    "id": "q20_company_overview",
+    "category": "company_overview",
+    "query": "Расскажи в целом об АНО ДПО Т-Образование: когда основана и какие форматы есть",
+    "expected_all_docs": ["company_overview.md"],
+    "expected_sections": ["Общая информация", "Основные форматы и программы", "Сводка документа"]
+  }
+]

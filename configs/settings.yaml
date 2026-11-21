@@ -1,0 +1,49 @@
+paths:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  index_dir: "data/index"
+  logs_dir: "logs"
+
+ingestion:
+  supported_extensions:
+    - ".md"
+    - ".txt"
+    - ".docx"
+    - ".html"
+    - ".htm"
+  max_chunk_chars: 1000
+  chunk_overlap_chars: 150
+  min_chunk_chars: 100
+  include_overview_card_chunk: true
+
+retrieval:
+  embedding_backend: "auto"
+  embedding_model: "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+  embedding_max_tokens: 512
+  query_prefix: ""
+  passage_prefix: ""
+  bm25_k1: 1.5
+  bm25_b: 0.75
+  bm25_weight: 0.50
+  dense_weight: 0.50
+  rrf_k: 60
+  candidate_pool_size: 60
+  top_k: 8
+  max_chunks_per_doc: 2
+  expand_top_programs: 4
+
+llm:
+  provider: "groq"
+  planner_model: "qwen/qwen3.8-27b"
+  primary_model: "openai/gpt-oss-120b"
+  fallback_models:
+    - "qwen/qwen3.8-27b"
+    - "openai/gpt-oss-20b"
+  temperature: 0.1
+  max_tokens: 2400
+  timeout_sec: 30
+  max_retries: 1
+
+logging:
+  level: "INFO"
+  diagnostic_log_file: "logs/diagnostics.jsonl"
