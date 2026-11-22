@@ -117,3 +117,10 @@ class SessionStore:
             fresh = SessionState(session_id=session_id)
             self._sessions[session_id] = fresh
             return fresh
+
+    def restore(self, state: SessionState) -> SessionState:
+        """Load a persisted SessionState snapshot into in-memory storage."""
+        restored = state.model_copy(deep=True)
+        with self._lock:
+            self._sessions[restored.session_id] = restored
+            return restored

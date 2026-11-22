@@ -22,6 +22,7 @@ from t_edu_agent.agent.state import (
     RetrievalPlan,
     SessionState,
     SessionStore,
+    SourceRef,
     UserProfile,
 )
 from t_edu_agent.config import AppConfig, load_config
@@ -41,6 +42,91 @@ _STATUS_TO_AUDIENCE: dict[str, list[str]] = {
     "начинающий специалист": ["начинающие специалисты"],
     "учитель": ["учителя"],
 }
+
+_SELF_CHECK_RE = re.compile(
+    r"\b(?:проверь|перепроверь|проанализируй|сверь)\b[^.!?\n]{0,45}"
+    r"\b(?:предыдущ\w+|прошл\w+|последн\w+|сво[йюе])\s+ответ"
+    r"|\bсамопроверк\w*|\bпроверь\s+себя\b"
+    r"|\bв\s+(?:прошлом|предыдущем)\s+ответе\b[^.!?\n]{0,45}\b(?:проверь|ошибк|источник|верно|подтвержд)",
+    re.IGNORECASE,
+)
+
+_RECIPIENT_ROLE_TOKEN = (
+    r"(?:себя|меня|сестр\w*|брат\w*|сын\w*|доч\w*|реб[её]нк\w*"
+    r"|подруг\w*|друг(?:а|у|ом|е)?|школьник\w*|студент\w*|ученик\w*)"
+)
+_RECIPIENT_CONTRAST_RE = re.compile(
+    rf"\bне\s+для\s+(?P<from>{_RECIPIENT_ROLE_TOKEN})\b[,;\s]+(?:а\s+)?для\s+(?P<to>{_RECIPIENT_ROLE_TOKEN})\b"
+    rf"|\bвместо\s+(?P<from_alt>{_RECIPIENT_ROLE_TOKEN})\b[^.!?\n]{{0,40}}\bдля\s+(?P<to_alt>{_RECIPIENT_ROLE_TOKEN})\b",
+    re.IGNORECASE,
+)
+_OTHER_RECIPIENT_RE = re.compile(
+    r"\bдля\s+друг(?:ого|ой)\s+(?:человек\w*|реб[её]нк\w*|школьник\w*|студент\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _canonical_recipient_role(token: str) -> str:
+    """Normalize a recipient noun stem so identical left/right roles do not trigger a switch."""
+    t = token.lower().replace("ё", "е")
+    if t in {"себя", "меня"}:
+        return "self"
+    for prefix, canonical in (
+        ("сестр", "sister"),
+        ("брат", "brother"),
+        ("сын", "son"),
+        ("доч", "daughter"),
+        ("ребенк", "child"),
+        ("подруг", "girlfriend"),
+        ("друг", "friend"),
+        ("школьник", "schooler"),
+        ("студент", "student"),
+        ("ученик", "pupil"),
+    ):
+        if t.startswith(prefix):
+            return canonical
+    return t
+
+
+def _is_explicit_recipient_switch(user_message: str) -> bool:
+    """Detect an unambiguous switch to a different target recipient (e.g. 'не для сестры, а для брата')."""
+    for match in _RECIPIENT_CONTRAST_RE.finditer(user_message):
+        src = match.group("from") or match.group("from_alt")
+        dst = match.group("to") or match.group("to_alt")
+        if src and dst and _canonical_recipient_role(src) != _canonical_recipient_role(dst):
+            return True
+    for match in _OTHER_RECIPIENT_RE.finditer(user_message):
+        if not re.search(r"\bне\s+$", user_message[: match.start()], re.IGNORECASE):
+            return True
+    return False
+
+
+def _extract_referenced_docs(
+    sources: list[SourceRef],
+    answer_text: str,
+) -> list[tuple[str, str]]:
+    """Order unique source documents putting programs actually cited in the answer first."""
+    unique_docs: list[tuple[str, str]] = []
+    seen_doc_ids: set[str] = set()
+    cited_doc_ids: set[str] = set()
+    answer_lower = answer_text.lower()
+
+    for src in sources:
+        if src.doc_id not in seen_doc_ids:
+            seen_doc_ids.add(src.doc_id)
+            unique_docs.append((src.doc_id, src.title))
+        core_title = re.sub(r"\s*\([^)]*\)\s*", "", src.title).strip().lower()
+        if (
+            f"[{src.source_id}]" in answer_text
+            or f"({src.source_id})" in answer_text
+            or (src.source_url and src.source_url in answer_text)
+            or (len(core_title) >= 6 and core_title in answer_lower)
+        ):
+            cited_doc_ids.add(src.doc_id)
+
+    mentioned = [(did, title) for did, title in unique_docs if did in cited_doc_ids]
+    others = [(did, title) for did, title in unique_docs if did not in cited_doc_ids]
+    return mentioned + others
 
 
 def _extract_json_object(raw_text: str) -> dict[str, Any]:
@@ -151,21 +237,23 @@ def _apply_deterministic_hints(plan: RetrievalPlan, user_message: str) -> Retrie
 def _fallback_plan(session: SessionState, user_message: str) -> RetrievalPlan:
     """Deterministic fallback plan if the LLM query rewriter fails or emits invalid JSON."""
     inferred_hints, _ = infer_query_hints(user_message)
+    recipient_switch = _is_explicit_recipient_switch(user_message)
+    base_profile = UserProfile() if recipient_switch else session.profile
 
     parts = [user_message]
     if session.history:
-        if session.profile.direction and session.profile.direction.lower() not in user_message.lower():
-            parts.append(session.profile.direction)
-        if session.profile.status and session.profile.status.lower() not in user_message.lower():
-            parts.append(session.profile.status)
-        if session.profile.known_skills:
-            parts.extend(s for s in session.profile.known_skills if s.lower() not in user_message.lower())
+        if base_profile.direction and base_profile.direction.lower() not in user_message.lower():
+            parts.append(base_profile.direction)
+        if base_profile.status and base_profile.status.lower() not in user_message.lower():
+            parts.append(base_profile.status)
+        if base_profile.known_skills:
+            parts.extend(s for s in base_profile.known_skills if s.lower() not in user_message.lower())
         if (
-            session.profile.format_preference
-            and session.profile.format_preference.lower() in {"онлайн", "очно"}
-            and session.profile.format_preference.lower() not in user_message.lower()
+            base_profile.format_preference
+            and base_profile.format_preference.lower() in {"онлайн", "очно"}
+            and base_profile.format_preference.lower() not in user_message.lower()
         ):
-            parts.append(session.profile.format_preference)
+            parts.append(base_profile.format_preference)
 
     q_l = user_message.lower()
     intent = "recommend"
@@ -174,7 +262,7 @@ def _fallback_plan(session: SessionState, user_message: str) -> RetrievalPlan:
     elif any(kw in q_l for kw in ("запиш", "отбор", "подать заявку", "без отбора")):
         intent = "rules_or_process"
 
-    profile_copy = session.profile.model_copy(deep=True)
+    profile_copy = base_profile.model_copy(deep=True)
     filters = inferred_hints.model_copy(deep=True)
     merged_missing = list(dict.fromkeys([*profile_copy.missing_skills, *(inferred_hints.exclude_required_skills or [])]))
     if merged_missing:
@@ -182,9 +270,15 @@ def _fallback_plan(session: SessionState, user_message: str) -> RetrievalPlan:
         profile_copy.known_skills = [s for s in profile_copy.known_skills if s.lower() not in merged_missing]
         filters.exclude_required_skills = merged_missing
 
-    if session.profile.format_preference in {"онлайн", "очно"} and not filters.format_modes:
-        filters.format_modes = [session.profile.format_preference]
-    if session.profile.no_selection_preferred is True and filters.has_selection is None:
+    if recipient_switch:
+        if inferred_hints.format_modes and not profile_copy.format_preference:
+            profile_copy.format_preference = inferred_hints.format_modes[0]
+        if inferred_hints.has_selection is False and profile_copy.no_selection_preferred is None:
+            profile_copy.no_selection_preferred = True
+
+    if base_profile.format_preference in {"онлайн", "очно"} and not filters.format_modes:
+        filters.format_modes = [base_profile.format_preference]
+    if base_profile.no_selection_preferred is True and filters.has_selection is None:
         filters.has_selection = False
     if not filters.audience:
         filters.audience = _status_to_audience(profile_copy.status)
@@ -247,6 +341,10 @@ class TEducationAgent:
         """Inspect current state of a session."""
         return self.sessions.get_or_create(session_id)
 
+    def restore_session(self, state: SessionState) -> SessionState:
+        """Restore a saved SessionState snapshot (for example after page reload)."""
+        return self.sessions.restore(state)
+
     def _plan_retrieval(
         self,
         session: SessionState,
@@ -281,7 +379,8 @@ class TEducationAgent:
     ) -> RetrievalResult:
         """Execute hybrid retrieval, supplementing comparison targets or follow-up doc context."""
         filters = plan.search_filters.model_copy(deep=True)
-        mentioned_files = _detect_entity_matches(user_message) | _detect_entity_matches(
+        user_mentioned_files = _detect_entity_matches(user_message)
+        mentioned_files = user_mentioned_files | _detect_entity_matches(
             plan.standalone_query
         )
         # Skip Turn-1 profile penalties when the user explicitly names a program to inspect or compare
@@ -310,6 +409,37 @@ class TEducationAgent:
         primary_res = self.retriever.search(plan.standalone_query, filters=filters)
         max_total_chunks = self.cfg.retrieval.top_k + 2
 
+        # When explicitly self-checking the previous answer, keep exact prior cited programs pinned
+        if _SELF_CHECK_RE.search(user_message) and session.discussed_doc_ids and not user_mentioned_files:
+            pinned_ids = session.discussed_doc_ids[:4]
+            self_check_res = self.retriever.search(
+                user_message,
+                filters=SearchFilters(doc_ids=pinned_ids),
+                top_k=max(max_total_chunks, 2 * len(pinned_ids)),
+                max_chunks_per_doc=2,
+            )
+            order_rank = {did: idx for idx, did in enumerate(pinned_ids)}
+            progs_sorted = sorted(
+                self_check_res.programs,
+                key=lambda p: order_rank.get(p.doc.doc_id, len(pinned_ids)),
+            )
+            interleaved_chunks = []
+            seen_chunk_ids = set()
+            for rank in range(2):
+                for prog in progs_sorted:
+                    if rank < len(prog.matched_chunks):
+                        chunk = prog.matched_chunks[rank]
+                        if chunk.chunk.chunk_id not in seen_chunk_ids:
+                            interleaved_chunks.append(chunk)
+                            seen_chunk_ids.add(chunk.chunk.chunk_id)
+            for chunk in self_check_res.chunks:
+                if chunk.chunk.chunk_id not in seen_chunk_ids:
+                    interleaved_chunks.append(chunk)
+                    seen_chunk_ids.add(chunk.chunk.chunk_id)
+            self_check_res.programs = progs_sorted
+            self_check_res.chunks = interleaved_chunks[:max_total_chunks]
+            return self_check_res
+
         # Unpenalized retrieval for explicitly named programs so prior filters cannot hide them
         if mentioned_files:
             mentioned_doc_ids = [
@@ -319,13 +449,18 @@ class TEducationAgent:
             ]
             if mentioned_doc_ids:
                 mention_query = user_message.strip() or plan.standalone_query
+                mention_top_k = (
+                    4
+                    if len(mentioned_doc_ids) == 1 and len(user_mentioned_files) == 1
+                    else min(6, 2 * len(mentioned_doc_ids))
+                )
                 mention_res = self.retriever.search(
                     mention_query,
                     filters=SearchFilters(
                         doc_ids=mentioned_doc_ids,
                         preferred_sections=filters.preferred_sections,
                     ),
-                    top_k=min(6, 2 * len(mentioned_doc_ids)),
+                    top_k=mention_top_k,
                 )
                 mention_chunk_ids = {c.chunk.chunk_id for c in mention_res.chunks}
                 merged_chunks = list(mention_res.chunks) + [
@@ -452,11 +587,15 @@ class TEducationAgent:
                 warnings=warnings,
             )
 
-        plan = self._plan_retrieval(session, cleaned_msg, warnings)
-        session.profile = _merge_profile(session.profile, plan.updated_profile)
+        working_session = session.model_copy(deep=True)
+        if _is_explicit_recipient_switch(cleaned_msg):
+            working_session.profile = UserProfile()
+
+        plan = self._plan_retrieval(working_session, cleaned_msg, warnings)
+        working_session.profile = _merge_profile(working_session.profile, plan.updated_profile)
 
         t_ret_start = time.perf_counter()
-        retrieval = self._retrieve_for_plan(session, plan, cleaned_msg)
+        retrieval = self._retrieve_for_plan(working_session, plan, cleaned_msg)
         retrieval_latency_ms = round((time.perf_counter() - t_ret_start) * 1000.0, 2)
 
         context_xml, sources = format_retrieved_context(
@@ -466,7 +605,7 @@ class TEducationAgent:
             docs_by_id=self.retriever.docs_by_id,
             sanitization_warnings=warnings,
         )
-        grounded_payload = build_grounded_user_payload(session, cleaned_msg, context_xml)
+        grounded_payload = build_grounded_user_payload(working_session, cleaned_msg, context_xml)
 
         # Keep system instructions strictly separated from untrusted retrieved sources and clean history
         recent_history = [
@@ -492,21 +631,25 @@ class TEducationAgent:
             if w.startswith("indirect_injection_sanitized:"):
                 security_flags.append(w)
 
-        # Persist only clean user/assistant turns (never raw retrieved source XML)
+        # Commit updated profile and clean turns only after retrieval and answer generation succeed
+        session.profile = working_session.profile
         session.history.append(ChatTurn(role="user", content=cleaned_msg))
         session.history.append(ChatTurn(role="assistant", content=answer_text))
         if len(session.history) > 10:
             session.history = session.history[-10:]
 
-        new_doc_ids = [p.doc.doc_id for p in retrieval.programs[:3]]
-        new_titles = [p.doc.title for p in retrieval.programs[:3]]
-        for did, title in zip(new_doc_ids, new_titles):
-            if did not in session.discussed_doc_ids:
-                session.discussed_doc_ids.insert(0, did)
-            if title not in session.discussed_titles:
-                session.discussed_titles.insert(0, title)
-        session.discussed_doc_ids = session.discussed_doc_ids[:5]
-        session.discussed_titles = session.discussed_titles[:5]
+        referenced_docs = _extract_referenced_docs(sources, answer_text)
+        if not referenced_docs:
+            referenced_docs = [(p.doc.doc_id, p.doc.title) for p in retrieval.programs[:3]]
+
+        ref_ids = list(dict.fromkeys(did for did, _ in referenced_docs))
+        ref_titles = list(dict.fromkeys(title for _, title in referenced_docs))
+        session.discussed_doc_ids = (
+            ref_ids + [did for did in session.discussed_doc_ids if did not in ref_ids]
+        )[:5]
+        session.discussed_titles = (
+            ref_titles + [t for t in session.discussed_titles if t not in ref_titles]
+        )[:5]
 
         total_latency_ms = round((time.perf_counter() - t_total_start) * 1000.0, 2)
         has_sanitization = bool(out_flags) or any(

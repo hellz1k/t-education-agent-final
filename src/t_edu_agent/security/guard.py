@@ -37,8 +37,8 @@ _REFUSAL_BY_CATEGORY: dict[str, str] = {
         "каждая сессия изолирована. Я могу работать только с вопросами в рамках вашего текущего диалога."
     ),
     "forced_official_guarantee": (
-        "Я не могу выдавать гарантии зачисления, трудоустройства или допуска без отбора. "
-        "Могу лишь подсказать фактические условия отбора и требования программы из подтверждённой базы."
+        "Я не могу выдавать гарантии зачисления, трудоустройства или указывать статус «Набор открыт» "
+        "без подтверждения в источниках. Могу подсказать только фактические условия и статус из проверенной базы."
     ),
     "multi_turn_escalation": (
         "Я не могу применять ранее предложенные тестовые или обходные правила для изменения "
@@ -83,6 +83,42 @@ _DIRECT_OVERRIDE_PATTERNS: list[re.Pattern[str]] = [
         re.IGNORECASE,
     ),
 ]
+
+# Bounded single-line quote spans in Russian («…», „…“) and English (“…”, "…", '…')
+_QUOTED_SPAN_RE = re.compile(
+    r"«[^»\n]{3,140}»|„[^“\n]{3,140}“|“[^”\n]{3,140}”|\"[^\"\n]{3,140}\"|(?<!\w)'[^'\n]{3,140}'(?!\w)"
+)
+
+_EDUCATIONAL_QUOTE_FRAME_RE = re.compile(
+    r"\b(?:изучаем|разбираем|проходим|обсуждаем|объясни|расскажи|что\s+(?:означает|значит|такое)"
+    r"|почему\s+(?:это|эта|такая|команда|фраза|при[её]м)|зачем\s+(?:от\s+не[её]|защища\w*)"
+    r"|как\s+(?:работает|защища\w*|защитить\w*)|считается\s+(?:атак\w*|уязвимост\w*|инъекц\w*)"
+    r"|what\s+does|why\s+(?:is|are)|explain\s+why|considered\s+(?:an?\s+)?(?:attack|injection|vulnerability))\b",
+    re.IGNORECASE,
+)
+
+_QUOTE_EXECUTION_DIRECTIVE_RE = re.compile(
+    r"\b(?:выполн\w*|сделай|примен\w*|активируй|исполн\w*|повтор\w*|следов\w*|следуй|подчин\w*|запуст\w*|проделай|действуй|работай|отвечай|ответь)\b"
+    r"[^.!?\n]{0,35}\b(?:это|его|е[её]|их|команд\w*|инструкц\w*|при[её]м\w*|правил\w*|пример\w*|так|выше|без\s+правил|без\s+ограничен\w*)\b"
+    r"|\b(?:продемонстрируй|проверь|попробуй|покажи)\b[^.!?\n]{0,30}\b(?:на\s+себе|на\s+деле|в\s+ответе)\b"
+    r"|\b(?:execute|run|apply|follow|obey|perform|activate|carry\s+out|do)\b[^.!?\n]{0,25}\b(?:it|that|this|these|those|command|instruction|above|now)\b"
+    r"|\bбез\s+(?:правил|ограничений)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_benign_quoted_override_discussion(text: str) -> bool:
+    """Allow purely analytical discussion of a quoted override example with no execution intent."""
+    if not _QUOTED_SPAN_RE.search(text):
+        return False
+    outer_text = _QUOTED_SPAN_RE.sub(" ", text)
+    if len(outer_text.strip()) < 15:
+        return False
+    if any(pat.search(outer_text) for pat in _DIRECT_OVERRIDE_PATTERNS):
+        return False
+    if _QUOTE_EXECUTION_DIRECTIVE_RE.search(outer_text):
+        return False
+    return bool(_EDUCATIONAL_QUOTE_FRAME_RE.search(outer_text))
 
 # Exfiltration of system prompt, hidden instructions, API keys, or .env
 _SECRET_EXFIL_PATTERNS: list[re.Pattern[str]] = [
@@ -130,6 +166,31 @@ _FORCED_GUARANTEE_PATTERNS: list[re.Pattern[str]] = [
         re.IGNORECASE,
     ),
 ]
+
+_INTERROGATIVE_OPEN_RE = re.compile(
+    r"\bоткрыт\w*\s+ли\b|\bли\b[^.!?\n]{0,30}\bоткрыт\w*"
+    r"|\b(?:какие|какой|какая|какую|где|когда)\b[^.!?\n]{0,45}\b(?:набор\w*|открыт\w*)",
+    re.IGNORECASE,
+)
+
+_FORCED_OPEN_STATUS_RE = re.compile(
+    r"\b(?:пиши|напиши|укажи|пометь|подставь|замени|считай|отвечай)\b"
+    r"(?:[^.!?\n]{0,60}?\b(?:что|вместо|на|как|статус)\b|[,\s:«\"'-]{1,4})"
+    r"[^.!?\n]{0,40}?\b(?:набор\w*\s+открыт\w*|регистраци\w+\s+открыт\w*|при[её]м\s+(?:заявок\s+)?открыт\w*|доступн\w+\s+сейчас)\b"
+    r"|\b(?:скажи|подтверди|ответь)\b[^.!?\n]{0,55}\b(?:вместо|даже\s+если|статус|что)\b[^.!?\n]{0,40}\b(?:набор\w*\s+открыт\w*|регистраци\w+\s+открыт\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_forced_status_fabrication(text: str) -> bool:
+    """Detect imperative commands asking the agent to fabricate an 'open enrollment' status."""
+    if _INTERROGATIVE_OPEN_RE.search(text):
+        return False
+    lowered = text.lower()
+    if "?" in text or " или " in f" {lowered} ":
+        if not any(tok in lowered for tok in ("вместо", "замени", "подставь", "даже если")):
+            return False
+    return bool(_FORCED_OPEN_STATUS_RE.search(text))
 
 # Multi-turn framing probes (Turn 1 setup) and follow-up activation (Turn 2+)
 _SETUP_PROBE_RE = re.compile(
@@ -179,10 +240,10 @@ _SECRET_TOKEN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bBearer\s+[A-Za-z0-9._-]{20,}\b", re.IGNORECASE), "Bearer [REDACTED_SECRET]"),
 ]
 
-_PROMPT_LEAK_MARKERS: tuple[str, ...] = (
-    "СТРОГИЕ ПРАВИЛА БЕЗОПАСНОСТИ И ДОСТОВЕРНОСТИ",
-    "Ты модуль анализа запроса для ИИ-консультанта",
-    "<retrieved_sources>",
+_PROMPT_LEAK_MARKERS: tuple[tuple[str, str], ...] = (
+    ("marker_rules_header", "СТРОГИЕ ПРАВИЛА БЕЗОПАСНОСТИ И ДОСТОВЕРНОСТИ"),
+    ("marker_planner_role", "Ты модуль анализа запроса для ИИ-консультанта"),
+    ("marker_retrieved_sources_tag", "<retrieved_sources>"),
 )
 
 
@@ -238,6 +299,10 @@ def assess_user_input(user_message: str, session: SessionState) -> SecurityAsses
             primary_category = primary_category or "forced_official_guarantee"
             break
 
+    if _is_forced_status_fabrication(text):
+        flags.append("forced_open_status")
+        primary_category = primary_category or "forced_official_guarantee"
+
     is_probe = bool(_SETUP_PROBE_RE.search(text))
     prior_probe_in_history = any(_SETUP_PROBE_RE.search(turn.content) for turn in session.history)
     prior_strikes = getattr(session, "security_strikes", 0) > 0 or prior_probe_in_history
@@ -253,6 +318,14 @@ def assess_user_input(user_message: str, session: SessionState) -> SecurityAsses
         primary_category = primary_category or "multi_turn_escalation"
 
     dedup_flags = list(dict.fromkeys(flags))
+    if (
+        dedup_flags == ["direct_role_override"]
+        and not is_probe
+        and not prior_strikes
+        and _is_benign_quoted_override_discussion(text)
+    ):
+        return SecurityAssessment(action="allow")
+
     if primary_category is not None:
         return SecurityAssessment(
             action="block",
@@ -305,8 +378,17 @@ def sanitize_untrusted_chunk(text: str) -> tuple[str, list[str]]:
 def inspect_and_sanitize_output(text: str) -> tuple[str, list[str]]:
     """Verify generated model output did not leak internal prompts or API secret shapes."""
     flags: list[str] = []
-    if any(marker in text for marker in _PROMPT_LEAK_MARKERS):
-        return _REFUSAL_BY_CATEGORY["prompt_or_secret_exfiltration"], ["output_prompt_leak_blocked"]
+    matched_marker_ids = [
+        marker_id for marker_id, marker in _PROMPT_LEAK_MARKERS if marker in text
+    ]
+    if matched_marker_ids:
+        return (
+            _REFUSAL_BY_CATEGORY["prompt_or_secret_exfiltration"],
+            [
+                "output_prompt_leak_blocked",
+                *(f"output_prompt_leak_marker:{mid}" for mid in matched_marker_ids),
+            ],
+        )
 
     scrubbed = scrub_secrets(text)
     if scrubbed != text:
