@@ -1,4 +1,4 @@
-"""Простой Streamlit-интерфейс для ИИ-консультанта «Т-Образование»."""
+"""Streamlit-интерфейс для AI-ассистента «Т-Образование»."""
 
 from __future__ import annotations
 
@@ -21,11 +21,158 @@ from t_edu_agent.storage import SQLiteChatStore  # noqa: E402
 # Подгружаем переменные окружения из локального .env (ключ Groq никогда не выводится на экран)
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=False)
 
-st.set_page_config(
-    page_title="Т-Образование — ИИ-консультант",
-    page_icon="🎓",
-    layout="centered",
+USER_AVATAR = ":material/person:"
+ASSISTANT_AVATAR = ":material/school:"
+CHAT_AVATARS = {"user": USER_AVATAR, "assistant": ASSISTANT_AVATAR}
+EXAMPLE_PROMPTS = (
+    "Какие образовательные программы сейчас доступны?",
+    "Какие требования для поступления на программу?",
+    "Какие навыки я получу после обучения?",
+    "Сравни несколько образовательных программ.",
 )
+
+st.set_page_config(
+    page_title="Т-Образование — AI-ассистент",
+    page_icon=ASSISTANT_AVATAR,
+    layout="centered",
+    initial_sidebar_state="expanded",
+)
+
+
+def apply_custom_styles() -> None:
+    """Добавляет минималистичное косметическое оформление без вмешательства в логику Streamlit."""
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            max-width: 48rem;
+            padding-top: 2.25rem;
+            padding-bottom: 2.5rem;
+        }
+        .te-header {
+            border-left: 4px solid #FFDD2D;
+            padding: 0.15rem 0 0.2rem 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .te-brand-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+            color: #1C1F26;
+            margin: 0;
+        }
+        .te-brand-subtitle {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #4B5563;
+            margin: 0.25rem 0 0.45rem 0;
+        }
+        .te-brand-desc {
+            font-size: 0.92rem;
+            line-height: 1.5;
+            color: #5C6470;
+            margin: 0;
+        }
+        .te-sidebar-brand {
+            border-left: 3px solid #FFDD2D;
+            padding-left: 0.65rem;
+            margin-bottom: 1rem;
+        }
+        .te-sidebar-brand-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #1C1F26;
+            line-height: 1.2;
+        }
+        .te-sidebar-brand-sub {
+            font-size: 0.8rem;
+            color: #6B7280;
+            margin-top: 0.15rem;
+        }
+        div[data-testid="stChatMessage"] {
+            padding: 0.95rem 1.1rem;
+            border-radius: 0.75rem;
+            margin-bottom: 0.6rem;
+            border: 1px solid #ECEEF2;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        div[data-testid="stChatMessageContent"],
+        div[data-testid="stChatMessage"] div[data-testid="stVerticalBlock"],
+        div[data-testid="stChatMessage"] div[data-testid="stElementContainer"],
+        div[data-testid="stChatMessage"] div[data-testid="stMarkdown"],
+        div[data-testid="stChatMessage"] div[data-testid="stMarkdownContainer"] {
+            min-width: 0;
+            max-width: 100%;
+        }
+        div[data-testid="stChatMessage"] p,
+        div[data-testid="stChatMessage"] li {
+            line-height: 1.58;
+        }
+        div[data-testid="stChatMessage"] div[data-testid="stMarkdownContainer"] table {
+            display: block;
+            width: max-content;
+            max-width: 100%;
+            overflow-x: auto;
+            border-collapse: collapse;
+            margin: 0.75rem 0;
+            font-size: 0.9rem;
+        }
+        div[data-testid="stChatMessage"] div[data-testid="stMarkdownContainer"] th,
+        div[data-testid="stChatMessage"] div[data-testid="stMarkdownContainer"] td {
+            white-space: normal;
+            overflow-wrap: break-word;
+            word-break: normal;
+            vertical-align: top;
+            padding: 0.5rem 0.7rem;
+            max-width: 16rem;
+        }
+        div[data-testid="stChatMessage"] div[data-testid="stMarkdownContainer"] th {
+            font-weight: 600;
+            background-color: #F7F8FA;
+        }
+        section[data-testid="stSidebar"] button[kind="tertiary"] {
+            justify-content: flex-start;
+            text-align: left;
+            font-weight: 400;
+        }
+        section[data-testid="stSidebar"] button[kind="secondary"] {
+            text-align: left;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_header() -> None:
+    """Отображает лаконичную брендированную шапку Т-Образования."""
+    st.markdown(
+        """
+        <div class="te-header">
+            <div class="te-brand-title">Т-Образование</div>
+            <div class="te-brand-subtitle">AI-ассистент образовательных программ</div>
+            <p class="te-brand-desc">
+                Помогаем разобраться в образовательных программах, требованиях к поступлению,
+                сроках и возможностях обучения.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_welcome() -> None:
+    """Показывает приветственный блок и текстовые примеры запросов для пустого диалога."""
+    with st.container(border=True):
+        st.subheader("Здравствуйте! Я AI-ассистент Т-Образования")
+        st.write(
+            "Помогу разобраться в образовательных программах, требованиях к поступлению, "
+            "сроках и возможностях обучения."
+        )
+        st.caption("Примеры запросов:")
+        st.markdown("\n".join(f"- {example}" for example in EXAMPLE_PROMPTS))
 
 
 @st.cache_resource
@@ -95,27 +242,35 @@ def render_sources(sources: list[SourceRef]) -> None:
     if not sources:
         return
 
-    with st.expander(f"Источники ({len(sources)})"):
-        seen: set[tuple[str | None, str]] = set()
-        for src in sources:
-            key = (src.source_url, src.section)
-            if key in seen:
-                continue
-            seen.add(key)
+    unique_sources: list[SourceRef] = []
+    seen: set[tuple[str | None, str]] = set()
+    for src in sources:
+        key = (src.source_url, src.section)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_sources.append(src)
 
-            checked = f" (проверено: {src.verified_at})" if src.verified_at else ""
+    with st.expander(f"Источники ({len(unique_sources)})", icon=":material/menu_book:"):
+        for src in unique_sources:
+            checked = f" · проверено {src.verified_at}" if src.verified_at else ""
             if src.source_url:
-                st.markdown(f"- **[{src.source_id}]** [{src.title} — {src.section}]({src.source_url}){checked}")
+                st.markdown(f"- **[{src.source_id}]** [{src.title}]({src.source_url}) — {src.section}{checked}")
             else:
                 st.markdown(f"- **[{src.source_id}]** {src.title} — {src.section}{checked}")
 
+
+apply_custom_styles()
 
 # Инициализация агента и БД с понятным сообщением при сбое
 try:
     agent = get_agent()
     store = get_chat_store()
 except Exception:
-    st.error("Не удалось загрузить базу знаний или настройки агента. Проверьте файлы конфигурации и индекса.")
+    st.error(
+        "Не удалось загрузить базу знаний или настройки агента. Проверьте файлы конфигурации и индекса.",
+        icon=":material/error_outline:",
+    )
     st.stop()
 
 owner_token = get_owner_token()
@@ -123,54 +278,83 @@ active_chat_id = ensure_active_chat(store, agent, owner_token)
 
 # Боковая панель: управление диалогами и список прошлых чатов пользователя
 with st.sidebar:
-    st.header("Диалоги")
-    if st.button("➕ Новый чат", use_container_width=True):
+    st.markdown(
+        """
+        <div class="te-sidebar-brand">
+            <div class="te-sidebar-brand-title">Т-Образование</div>
+            <div class="te-sidebar-brand-sub">AI-ассистент программ</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.button("Новый чат", icon=":material/add:", type="primary", use_container_width=True):
         new_id = store.create_chat(owner_token)
         switch_chat(store, agent, owner_token, new_id)
         st.rerun()
 
-    if st.button("🧹 Очистить текущий чат", use_container_width=True):
+    if st.button(
+        "Очистить текущий чат",
+        icon=":material/delete_sweep:",
+        type="secondary",
+        use_container_width=True,
+    ):
         store.clear_chat(owner_token, active_chat_id)
         agent.reset_session(active_chat_id)
         switch_chat(store, agent, owner_token, active_chat_id)
         st.rerun()
 
     st.divider()
-    st.caption("Ваши чаты")
+    st.caption("История диалогов")
     for chat in store.list_chats(owner_token):
-        label = f"💬 {chat.title}" if chat.chat_id == active_chat_id else chat.title
-        if st.button(label, key=f"chat_btn_{chat.chat_id}", use_container_width=True):
+        is_active = chat.chat_id == active_chat_id
+        if st.button(
+            chat.title,
+            key=f"chat_btn_{chat.chat_id}",
+            icon=":material/chat:" if is_active else ":material/chat_bubble_outline:",
+            type="secondary" if is_active else "tertiary",
+            use_container_width=True,
+        ):
             if switch_chat(store, agent, owner_token, chat.chat_id):
                 st.rerun()
 
 # Основная область чата
-st.title("🎓 Т-Образование")
-st.caption("ИИ-консультант по курсам, интенсивам, школам и стажировкам Т-Банка.")
+render_header()
+
+messages = st.session_state.get("messages", [])
+if not messages:
+    render_welcome()
 
 # Отрисовываем историю текущего диалога (сохраняется в SQLite после F5)
-for saved in st.session_state.get("messages", []):
-    with st.chat_message(saved["role"]):
+for saved in messages:
+    role = saved["role"]
+    with st.chat_message(role, avatar=CHAT_AVATARS.get(role, ASSISTANT_AVATAR)):
         st.markdown(saved["content"])
-        if saved["role"] == "assistant":
+        if role == "assistant":
             render_sources(saved.get("sources", []))
 
 # Обработка нового сообщения пользователя
-prompt = st.chat_input("Напишите ваш запрос, например: «Я первокурсник, знаю Python, что подойдёт?»")
+prompt = st.chat_input("Задайте вопрос о программах, требованиях или сроках обучения...")
 if prompt:
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar=USER_AVATAR):
         st.markdown(prompt)
 
     try:
-        with st.spinner("Ищу программы и готовлю ответ..."):
+        with st.spinner("Подбираю программы и проверяю источники..."):
             response = agent.answer(active_chat_id, prompt)
     except ValueError:
-        st.warning("Пожалуйста, введите непустой вопрос.")
+        st.warning("Пожалуйста, введите непустой вопрос.", icon=":material/info:")
     except LLMServiceError:
-        st.error("Сервис языковой модели временно недоступен или сработал лимит запросов. Попробуйте ещё раз чуть позже.")
+        st.error(
+            "Сервис языковой модели временно недоступен или сработал лимит запросов. Попробуйте ещё раз чуть позже.",
+            icon=":material/error_outline:",
+        )
     except Exception:
-        st.error("Не удалось обработать запрос. Попробуйте повторить или открыть новый чат.")
+        st.error(
+            "Не удалось обработать запрос. Попробуйте повторить или открыть новый чат.",
+            icon=":material/error_outline:",
+        )
     else:
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
             st.markdown(response.answer)
             render_sources(response.sources)
 
